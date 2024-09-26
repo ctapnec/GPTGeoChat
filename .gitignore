@@ -4,5 +4,6 @@ gptgeochat/
 # Ignore moderation_decisions_ground_truth directory
 moderation_decisions_ground_truth/
 
-# Ignore human.zip file
+# Ignore human.zip and synthetic.zip files
 human.zip
+synthetic.zip
