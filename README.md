@@ -1,5 +1,5 @@
 # GPTGeoChat🌎: Benchmarking Conversational Geolocation 
-> This is **NOT** the Repository for "Granular Privacy Control for Geolocation with Vision Language Models", but a mere fork with added HuggingFace support. You can find the original repostitory <a href="[https://github.com/Lordog/R-Judge](https://github.com/ethanm88/GPTGeoChat)">here</a>.
+> This is **NOT** the Repository for "Granular Privacy Control for Geolocation with Vision Language Models", but a mere fork with added HuggingFace support. You can find the original repostitory [here](https://github.com/ethanm88/GPTGeoChat).
 
 > Changes introduced by *ctapnec* - TODO
 
