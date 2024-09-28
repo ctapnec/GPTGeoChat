@@ -7,3 +7,6 @@ moderation_decisions_ground_truth/
 # Ignore human.zip and synthetic.zip files
 human.zip
 synthetic.zip
+
+# Specific version requirements
+_requirements.txt

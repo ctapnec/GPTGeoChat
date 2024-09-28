@@ -1,0 +1,5 @@
+numpy
+Requests
+scikit_learn
+tqdm
+huggingface_hub
