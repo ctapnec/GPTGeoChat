@@ -1,5 +1,11 @@
 import os, sys, json
 from huggingface_hub import InferenceClient
+import torch
+from PIL import Image
+from transformers import AutoModelForCausalLM, AutoProcessor, AutoModelForVision2Seq, AutoTokenizer, TextIteratorStreamer, QuantoConfig
+from transformers.image_utils import load_image
+import time
+from threading import Thread
 
 '''
     ### Annotation:
@@ -96,6 +102,63 @@ from huggingface_hub import InferenceClient
 
 ### HF Inference support
 HF_API_KEY = os.environ['HF_API_KEY']
+### GPTGeoChat human test annotations folder
+ANNOTATIONS_FOLDER = 'gptgeochat/human/test/annotations'
+
+# Generic model inference, as per Hugging Face Inference API
+def model_inference(
+    model,
+    processor,
+    user_prompt,
+    chat_history,
+    max_new_tokens,
+    images
+):
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    user_prompt = {
+        "role": "user",
+        "content": [
+            {"type": "image"},
+            {"type": "text", "text": user_prompt},
+        ]
+    }
+    chat_history.append(user_prompt)
+    streamer = TextIteratorStreamer(
+        processor.tokenizer,
+        skip_prompt=True,
+        timeout=5.0,
+    )
+
+    generation_args = {
+        "max_new_tokens": max_new_tokens,
+        "streamer": streamer,
+        "do_sample": False
+    }
+
+    # add_generation_prompt=True makes model generate bot response
+    prompt = processor.apply_chat_template(chat_history, add_generation_prompt=True)
+    inputs = processor(
+        text=prompt,
+        images=images,
+        return_tensors="pt",
+    ).to(device)
+    generation_args.update(inputs)
+
+    thread = Thread(
+        target=model.generate,
+        kwargs=generation_args,
+    )
+    thread.start()
+
+    acc_text = ""
+    for text_token in streamer:
+        time.sleep(0.04)
+        acc_text += text_token
+        if acc_text.endswith("<end_of_utterance>"):
+            acc_text = acc_text[:-18]
+        yield acc_text
+    
+    thread.join()
 
 # Loads prompts from json file
 def load_prompts(file_path):
@@ -115,6 +178,7 @@ def get_image_metadata(annotation):
 def assess_prediction(model_name, annotation, prompt):
     while True:
         try:
+            '''
             image_id, image_name, image_path = get_image_metadata(annotation)
             messages = annotation.get("messages", [])
             client = InferenceClient(token=HF_API_KEY)
@@ -134,6 +198,66 @@ def assess_prediction(model_name, annotation, prompt):
             #return {
             #    "question_id": image_id,
             #}
+            '''
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            #torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+            #model = AutoModelForCausalLM.from_pretrained("microsoft/Florence-2-large", torch_dtype=torch_dtype, trust_remote_code=True).to(device)
+            processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+            quantization_config = QuantoConfig(weights="int8") # Mercy to the hardware
+            #model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype="auto", trust_remote_code=True).to(device)
+            # Try loading with quantization config, load without otherwise
+            model = None
+            try:
+                print(f"Loading AutoModelForVision2Seq model {model_name} with quantization config...")
+                model = AutoModelForVision2Seq.from_pretrained(model_name, quantization_config=quantization_config, trust_remote_code=True).to(device)
+            except Exception as e:
+                print(f"Error loading AutoModelForVision2Seq model {model_name} with quantization config: {e}. Trying without quantization config...")
+                try:
+                    print(f"Loading AutoModelForVision2Seq model {model_name} without quantization config...")
+                    model = AutoModelForVision2Seq.from_pretrained(model_name, trust_remote_code=True).to(device)
+                except Exception as e:
+                    print(f"Error loading AutoModelForVision2Seq model {model_name} without quantization config: {e}")
+                    try:
+                        print(f"Loading AutoModelForCausalLM model {model_name} with quantization config...")
+                        model = AutoModelForCausalLM.from_pretrained(model_name, quantization_config=quantization_config, trust_remote_code=True).to(device)
+                    except Exception as e:
+                        print(f"Error loading AutoModelForCausalLM model {model_name} with quantization config: {e}. Trying without quantization config...")
+                        try:
+                            print(f"Loading AutoModelForCausalLM model {model_name} without quantization config...")
+                            model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True).to(device)
+                        except Exception as e:
+                            print(f"Error loading AutoModelForCausalLM model {model_name} without quantization config: {e}. Exiting...")
+                            sys.exit(1)
+            messages = annotation.get("messages", [])
+            image_id, image_name, image_path = get_image_metadata(annotation)
+            images = [Image.open(ANNOTATIONS_FOLDER + '/' + image_path)]
+            generator = model_inference(
+                model=model,
+                processor=processor,
+                user_prompt=prompt,
+                chat_history=messages,
+                max_new_tokens=500,
+                images=images
+            )
+            result = ''
+            print('RESULT OUTPUT: ')
+            for value in generator:
+                result += value
+                sys.stdout.write(value)
+            print('\nRESULT DONE...')
+            return result
+            '''
+            prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
+            image_id, image_name, image_path = get_image_metadata(annotation)
+            image = load_image(ANNOTATIONS_FOLDER + '/' + image_path)
+            inputs = processor(text=prompt, images=[image], return_tensors="pt")
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            # Generate
+            generated_ids = model.generate(**inputs, max_new_tokens=500)
+            generated_texts = processor.batch_decode(generated_ids, skip_special_tokens=True)
+            return generated_texts
+            '''
+            
         except Exception as e:
             print(f"Error asking model {model_name}: {e}")
             # If e contains 'Timeout' or 'ConnectionError', retry
@@ -144,24 +268,23 @@ def assess_prediction(model_name, annotation, prompt):
 
 # Main function
 if __name__ == "__main__":
+    model_name = sys.argv[1] if len(sys.argv) > 1 else 'Qwen/Qwen2-VL-2B-Instruct'
     # Load prompts /ref. https://arxiv.org/abs/2407.04952 - Granular Privacy Control for Geolocation with Vision Language Models/
     prompts = load_prompts('prompts.json')
     # Load annotations from gptgeochat/human/test/annotations
     annotations = []
-    for root, dirs, files in os.walk('gptgeochat/human/test/annotations'):
+    for root, dirs, files in os.walk(ANNOTATIONS_FOLDER):
         for file in files:
             if file.endswith('.json'):
                 with open(os.path.join(root, file), 'r') as f:
                     annotations.append(json.load(f))
     # Assess predictions
-    for model_name, prompt in prompts.items():
-        for annotation in annotations:
-            result = assess_prediction(model_name, annotation, prompts["prompted_agent"])
-            print(result)
-            # Save result
-            #with open(f"results/{model_name}_{image_id}.json", "w") as f:
-            #    json.dump(result, f)
-            #print(f"Saved result for {model_name} and image {image_id}")
-            break
+    for annotation in annotations:
+        result = assess_prediction(model_name, annotation, prompts["prompted_agent"])
+        print(result)
+        # Save result
+        #with open(f"results/{model_name}_{image_id}.json", "w") as f:
+        #    json.dump(result, f)
+        #print(f"Saved result for {model_name} and image {image_id}")
         break
     print('DONE...')

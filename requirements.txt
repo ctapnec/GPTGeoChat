@@ -3,3 +3,11 @@ Requests
 scikit_learn
 tqdm
 huggingface_hub
+torch
+pillow
+transformers
+quanto
+bitsandbytes
+einops
+timm
+flash_attn
