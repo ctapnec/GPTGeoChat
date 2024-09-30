@@ -221,7 +221,7 @@ def execute_inference(model, processor, prompt, annotation, msg_index, granulari
             raise e
 
 # Assess prediction using Hugging Face Inference API and "prompted_agent" prompt
-def assess_prediction(model_name, annotation, msg_index, prompt, granularity="city"):
+def assess_prediction(model_name, annotation, prompt, granularity="city"):
     while True:
         try:
             '''
@@ -256,23 +256,25 @@ def assess_prediction(model_name, annotation, msg_index, prompt, granularity="ci
             # Try loading with quantization config, load without otherwise
             model = None
             #
-            result = ''
+            result = []
             for model_class in [AutoModel, AutoModelForVision2Seq, AutoModelForVisualQuestionAnswering, AutoModelForCausalLM, AutoModelForVisualQuestionAnswering, FlaxAutoModelForVision2Seq]:
                 try:
                     print(f"Loading {model_class.__name__} model {model_name} with quantization config...")
                     model = model_class.from_pretrained(model_name, quantization_config=quantization_config, trust_remote_code=True).to(device)
-                    result = execute_inference(model, processor, prompt, annotation, msg_index, granularity)
+                    for msg_index in range(0, len(annotation['messages']), 2):
+                        result.append(execute_inference(model, processor, prompt, annotation, msg_index, granularity))
                     break
                 except Exception as e:
                     print(f"Error loading {model_class.__name__} model {model_name} with quantization config: {e}. Trying without quantization config...")
                     try:
                         print(f"Loading {model_class.__name__} model {model_name} without quantization config...")
                         model = model_class.from_pretrained(model_name, trust_remote_code=True).to(device)
-                        result = execute_inference(model, processor, prompt, annotation, msg_index, granularity)
+                        for msg_index in range(0, len(annotation['messages']), 2):
+                            result.append(execute_inference(model, processor, prompt, annotation, msg_index, granularity))
                         break
                     except Exception as e:
                         print(f"Error loading {model_class.__name__} model {model_name} without quantization config: {e}.")
-            if model is None or result == '':
+            if model is None or len(result) != len(annotation['messages']) / 2:
                 print(f"Error loading model {model_name} with all available classes of models.")
                 sys.exit(1)
                 # TODO: Continue with all available classes of models - Idefics2ForConditionalGeneration, Qwen2VLForConditionalGenMllamaForConditionalGeneration, LlavaForConditionalGeneration
@@ -311,12 +313,10 @@ if __name__ == "__main__":
                     annotations.append(json.load(f))
     # Assess predictions
     for annotation in annotations:
-        # Cycle to messages in annotation by 2 (user and assistant)
-        for msg_index in range(0, len(annotation['messages']), 2):
-            # Assess prediction for each granularity
-            for granularity in granularities:
-                result = assess_prediction(model_name, annotation, msg_index, prompts["prompted_agent"], granularity)
-                print(result)
+        # Assess prediction for each granularity
+        for granularity in granularities:
+            result = assess_prediction(model_name, annotation, prompts["prompted_agent"], granularity)
+            print(result)
         # Save result
         #with open(f"results/{model_name}_{image_id}.json", "w") as f:
         #    json.dump(result, f)
