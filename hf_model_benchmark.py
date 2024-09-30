@@ -252,7 +252,7 @@ def assess_prediction(model_name, annotation, prompt, granularity="city"):
                 processor=processor,
                 user_prompt=prompt,
                 chat_history=messages,
-                #max_new_tokens=500,
+                max_new_tokens=1500,
                 images=images
             )
             result = ''
