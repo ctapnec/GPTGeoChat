@@ -221,7 +221,7 @@ def execute_inference(model, processor, prompt, annotation, msg_index, granulari
             raise e
 
 # Assess prediction using Hugging Face Inference API and "prompted_agent" prompt
-def assess_prediction(model_name, annotation, prompt, granularity="city"):
+def assess_prediction(model_name, annotation, prompt, granularity="all"):
     while True:
         try:
             '''
@@ -245,8 +245,13 @@ def assess_prediction(model_name, annotation, prompt, granularity="city"):
             #    "question_id": image_id,
             #}
             '''
-            if granularity not in granularities:
+            granuls = []
+            if granularity == "all":
+                granuls = ["country", "city", "neighborhood", "exact_location_name", "exact_gps_coordinates"]
+            elif granularity not in granularities:
                 raise ValueError(f"Granularity {granularity} not supported")
+            else:
+                granuls = [granularity]
             device = "cuda:0" if torch.cuda.is_available() else "cpu"
             #torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
             #model = AutoModelForCausalLM.from_pretrained("microsoft/Florence-2-large", torch_dtype=torch_dtype, trust_remote_code=True).to(device)
@@ -255,26 +260,30 @@ def assess_prediction(model_name, annotation, prompt, granularity="city"):
             #model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype="auto", trust_remote_code=True).to(device)
             # Try loading with quantization config, load without otherwise
             model = None
-            #
-            result = []
+            # result is an object with keys granuls values
+            result = {}
+            for granul in granuls:
+                result[granul] = []
             for model_class in [AutoModel, AutoModelForVision2Seq, AutoModelForVisualQuestionAnswering, AutoModelForCausalLM, AutoModelForVisualQuestionAnswering, FlaxAutoModelForVision2Seq]:
                 try:
                     print(f"Loading {model_class.__name__} model {model_name} with quantization config...")
                     model = model_class.from_pretrained(model_name, quantization_config=quantization_config, trust_remote_code=True).to(device)
-                    for msg_index in range(0, len(annotation['messages']), 2):
-                        result.append(execute_inference(model, processor, prompt, annotation, msg_index, granularity))
+                    for granul in granuls:
+                        for msg_index in range(0, len(annotation['messages']), 2):
+                            result[granul].append(execute_inference(model, processor, prompt, annotation, msg_index, granul))
                     break
                 except Exception as e:
                     print(f"Error loading {model_class.__name__} model {model_name} with quantization config: {e}. Trying without quantization config...")
                     try:
                         print(f"Loading {model_class.__name__} model {model_name} without quantization config...")
                         model = model_class.from_pretrained(model_name, trust_remote_code=True).to(device)
-                        for msg_index in range(0, len(annotation['messages']), 2):
-                            result.append(execute_inference(model, processor, prompt, annotation, msg_index, granularity))
+                        for granul in granuls:
+                            for msg_index in range(0, len(annotation['messages']), 2):
+                                result[granul].append(execute_inference(model, processor, prompt, annotation, msg_index, granul))
                         break
                     except Exception as e:
                         print(f"Error loading {model_class.__name__} model {model_name} without quantization config: {e}.")
-            if model is None or len(result) != len(annotation['messages']) / 2:
+            if model is None:
                 print(f"Error loading model {model_name} with all available classes of models.")
                 sys.exit(1)
                 # TODO: Continue with all available classes of models - Idefics2ForConditionalGeneration, Qwen2VLForConditionalGenMllamaForConditionalGeneration, LlavaForConditionalGeneration
@@ -314,9 +323,8 @@ if __name__ == "__main__":
     # Assess predictions
     for annotation in annotations:
         # Assess prediction for each granularity
-        for granularity in granularities:
-            result = assess_prediction(model_name, annotation, prompts["prompted_agent"], granularity)
-            print(result)
+        result = assess_prediction(model_name, annotation, prompts["prompted_agent"])
+        print(result)
         # Save result
         #with open(f"results/{model_name}_{image_id}.json", "w") as f:
         #    json.dump(result, f)
