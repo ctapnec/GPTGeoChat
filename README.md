@@ -1,7 +1,9 @@
 # GPTGeoChat🌎: Benchmarking Conversational Geolocation 
 > This is **NOT** the Repository for "Granular Privacy Control for Geolocation with Vision Language Models", but a mere fork with added HuggingFace support. You can find the original repostitory [here](https://github.com/ethanm88/GPTGeoChat).
 
-> Changes introduced by *ctapnec* - TODO
+> Changes introduced by *ctapnec* - HuggingFace transformer imagetext-to-text pipeline (currently for transformers.AutoModelForVision2Seq class of models) *in progress*. Reversed the moderation decisions prompted process and implementing it in (relatively) user-friendly pipeline script.
+
+> 📃 [Paper](https://arxiv.org/abs/2407.04952)
 
 
 ## Main Datasets 🗎
