@@ -29,7 +29,6 @@ EXAMPLES = {
 
 # Internal configuration
 cached_config = {
-    "device": None,
     "pipeline": None,
     "processor": None
 }
@@ -48,7 +47,7 @@ def get_image_metadata(annotation):
     image_path = f"../images/{image_name}"
     return image_id, image_name, image_path
 
-def execute_inference(device, pipe, model_name, processor, prompt, annotation, msg_index, granularity="city"):
+def execute_inference(pipe, model_name, processor, prompt, annotation, msg_index, granularity="city"):
     try:
         if pipe is None or processor is None:
             raise ValueError("Model pipeline and processor must be provided")
@@ -140,10 +139,10 @@ def execute_inference(device, pipe, model_name, processor, prompt, annotation, m
             raise e
 
 # Ask the model for on all messages and granularities
-def ask_model(device, pipe, model_name, processor, annotation, prompt, result, granuls):
+def ask_model(pipe, model_name, processor, annotation, prompt, result, granuls):
     for granul in granuls:
         for msg_index in range(0, len(annotation['messages']), 2):
-            res = execute_inference(device, pipe, model_name, processor, prompt, annotation, msg_index, granul)
+            res = execute_inference(pipe, model_name, processor, prompt, annotation, msg_index, granul)
             start = res.find("{") + 1
             end = res.find("}")
             if start != -1 and end != -1:
@@ -177,17 +176,15 @@ def assess_prediction(model_name, annotation, prompt, granularity="all"):
                 raise ValueError(f"Granularity {granularity} not supported")
             else:
                 granuls = [granularity]
-            device = None
             pipe = None
             processor = None
             result = {}
             for granul in granuls:
                 result[granul] = []
-            if cached_config['device'] is not None and cached_config['pipeline'] is not None and cached_config['processor'] is not None:
-                device = cached_config['device']
+            if cached_config['pipeline'] is not None and cached_config['processor'] is not None:
                 pipe = cached_config['pipeline']
                 processor = cached_config['processor']
-                ask_model(device, pipe, model_name, processor, annotation, prompt, result, granuls)
+                ask_model(pipe, model_name, processor, annotation, prompt, result, granuls)
             else:
                 device = CUDA_DEVICE if torch.cuda.is_available() else "cpu"
                 processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
@@ -201,8 +198,7 @@ def assess_prediction(model_name, annotation, prompt, granularity="all"):
                         print(f"Error loading visual-question-answering pipeline: {e}. Exiting...")
                         sys.exit(1)
                 print(f"Model pipeline {model_name} loaded...")
-                ask_model(device, pipe, model_name, processor, annotation, prompt, result, granuls)
-                cached_config["device"] = device
+                ask_model(pipe, model_name, processor, annotation, prompt, result, granuls)
                 cached_config["pipeline"] = pipe
                 cached_config["processor"] = processor
             return result
